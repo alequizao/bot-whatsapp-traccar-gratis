@@ -287,3 +287,6 @@ Agora, no seu `traccar.xml`, configure o envio de mensagens SMS via HTTP para o 
 3️⃣ O **bot do WhatsApp envia a mensagem** para o número recebido.
 
 🚀 Agora, seu Traccar pode enviar alertas diretamente para o WhatsApp!
+
+Meu instagram: https://instagram.com/alequizao
+Meu whatsapp: https://wa.me/82988717072
