@@ -1,3 +1,4 @@
+BOT TRACCAR PARA WHATSAPP
 # Manual de Instalação, Configuração e Execução do Código
 
 # Configurado para quem utiliza traccar
