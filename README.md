@@ -221,7 +221,7 @@ npm install whatsapp-web.js qrcode-terminal axios express puppeteer --force
     ```
     
 
-No contexto da URL const TRACCAR_URL = 'https://USUARIO:SENHA@SEU-IP:PORTA';, a autenticação básica HTTP é implementada incorporando o nome de usuário (USUARIO) e a senha (SENHA) diretamente na URL. Essa técnica permite que o cliente se autentique automaticamente ao acessar o recurso especificado. 
+No contexto da URL TRACCAR_URL = 'https://USUARIO:SENHA@SEU-IP:PORTA';, a autenticação básica HTTP é implementada incorporando o nome de usuário (USUARIO) e a senha (SENHA) diretamente na URL. Essa técnica permite que o cliente se autentique automaticamente ao acessar o recurso especificado. 
 
     
 2. **Configurações Específicas**:
