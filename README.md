@@ -292,5 +292,5 @@ Agora, no seu `traccar.xml`, configure o envio de mensagens SMS via HTTP para o 
 
 🚀 Agora, seu Traccar pode enviar alertas diretamente para o WhatsApp!
 
-Meu instagram: https://instagram.com/alequizao
-Meu whatsapp: https://wa.me/82988717072
+Meu instagram: https://instagram.com/alequizao.com.br
+Meu whatsapp: https://wa.me/5582988717072
