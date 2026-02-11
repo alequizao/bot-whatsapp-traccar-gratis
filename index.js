@@ -1,148 +1,220 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+'use strict';
+
+process.env.LOG_LEVEL = 'fatal';
+require('dotenv').config();
+
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    jidNormalizedUser
+} = require('@whiskeysockets/baileys');
+
+const P = require('pino');
+const express = require('express');
 const axios = require('axios');
-const express = require('express'); // Servidor HTTP para receber mensagens do Traccar
+const qrcode = require('qrcode-terminal');
 
 const app = express();
-app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-
-// Configuração do Traccar
-const TRACCAR_URL = 'https://USUARIO:SENHA@SEU-IP:PORTA';
-const urlObj = new URL(TRACCAR_URL);
-const baseUrl = urlObj.origin;
-const authHeader = 'Basic ' + Buffer.from(`${urlObj.username}:${urlObj.password}`).toString('base64');
-
-// Inicializa o WhatsApp Web
-const client = new Client({
-    authStrategy: new LocalAuth({ clientId: 'SEU-NOME' }),
-    puppeteer: {
-        headless: false,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--disable-gpu'
-        ],
-        executablePath: require('puppeteer').executablePath(),
-        dumpio: true,
-        timeout: 60000
-    }
-});
-
-// Gera QR Code para autenticação
-client.on('qr', qr => {
-    qrcode.generate(qr, { small: true });
-});
-
-client.on('ready', () => {
-    console.log('✅ WhatsApp bot está pronto!');
-});
-
-// Recebe mensagens do Traccar
-//Exemplo:
-// http://localhost:3000/send-message?phone=5582988717072&text=teste
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
 
-app.all('/send-message', async (req, res) => {
-    let phone = req.query.phone || req.body.phone;
-    const text = req.query.text || req.body.text;
+// ================= CONFIG =================
+const PORT = process.env.PORT || 3000;
+const POLL_INTERVAL = 2000; // 🔥 2 segundos
 
-    if (!phone || !text) {
-        return res.status(400).json({ error: 'Parâmetros inválidos' });
-    }
+const TRACCAR_BASE_URL = process.env.TRACCAR_BASE_URL;
+const TRACCAR_USER = process.env.TRACCAR_USER;
+const TRACCAR_PASS = process.env.TRACCAR_PASS;
 
-    // 🔹 Correção do número para o formato correto
-    phone = normalizePhoneNumber(phone);
-
-    try {
-        await client.sendMessage(phone + '@c.us', text);
-        console.log(`📩 Mensagem enviada para ${phone}: ${text}`);
-        res.json({ success: true, message: 'Mensagem enviada com sucesso' });
-    } catch (error) {
-        console.error('Erro ao enviar mensagem:', error);
-        res.status(500).json({ error: 'Erro ao enviar mensagem' });
+const axiosInstance = axios.create({
+    baseURL: TRACCAR_BASE_URL,
+    timeout: 10000,
+    headers: {
+        Authorization:
+            'Basic ' +
+            Buffer.from(`${TRACCAR_USER}:${TRACCAR_PASS}`).toString('base64')
     }
 });
 
-// 🔹 Função para normalizar números brasileiros
-function normalizePhoneNumber(phone) {
-    phone = phone.replace(/\D/g, ''); // Remove tudo que não for número
+// ================= WHATSAPP =================
+let sock;
+const deviceCache = {};
+let monitorStarted = false;
 
-    // Se começar com 55 (Brasil), verifica o tamanho do número
-    if (phone.startsWith('55')) {
-        const localNumber = phone.substring(2); // Remove o 55
-        if (localNumber.length === 11) {
-            return phone; // Já está correto (558298XXXXXXXX)
-        } else if (localNumber.length === 10) {
-            return '55' + localNumber[0] + '9' + localNumber.substring(1); // Adiciona o 9 no celular
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('./auth');
+    const { version } = await fetchLatestBaileysVersion();
+
+    sock = makeWASocket({
+        version,
+        logger: P({ level: 'fatal' }),
+        auth: state,
+        printQRInTerminal: false
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            console.clear();
+            console.log('\n📱 Escaneie o QR Code:\n');
+            qrcode.generate(qr, { small: true });
         }
-    }
 
-    return phone; // Retorna sem alteração se não for do Brasil
+        if (connection === 'open') {
+            console.clear();
+            console.log('✅ WhatsApp conectado.');
+            if (!monitorStarted) {
+                monitorStarted = true;
+                startMonitor();
+            }
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect =
+                lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+
+            if (shouldReconnect) startBot();
+            else console.log('❌ Sessão encerrada. Apague /auth.');
+        }
+    });
 }
 
-// Inicia o servidor para escutar requisições do Traccar
-const PORT = 3000;
+// ================= MONITORAMENTO 2s =================
+function startMonitor() {
+    console.log('👀 Monitorando a cada 2 segundos...');
+
+    setInterval(async () => {
+        try {
+            const { data: devices } = await axiosInstance.get('/api/devices');
+
+            for (const device of devices) {
+                const deviceId = device.id;
+
+                const { data: positions } = await axiosInstance.get(
+                    `/api/positions?deviceId=${deviceId}&limit=1`
+                );
+
+                if (!positions.length) continue;
+
+                const pos = positions[0];
+
+                const currentState = {
+                    status: device.status,
+                    ignition: pos.attributes?.ignition ?? null,
+                    motion: pos.attributes?.motion ?? null
+                };
+
+                if (!(deviceId in deviceCache)) {
+                    deviceCache[deviceId] = currentState;
+                    continue;
+                }
+
+                const previousState = deviceCache[deviceId];
+
+                if (
+                    previousState.status !== currentState.status ||
+                    previousState.ignition !== currentState.ignition ||
+                    previousState.motion !== currentState.motion
+                ) {
+                    deviceCache[deviceId] = currentState;
+                    await notifyChange(device, pos, previousState, currentState);
+                }
+            }
+
+        } catch (err) {
+            console.error('Erro monitoramento:', err.message);
+        }
+    }, POLL_INTERVAL);
+}
+
+// ================= ENVIO REAL =================
+async function notifyChange(device, pos, oldState, newState) {
+    try {
+        const rawPhone =
+            device.phone ||
+            device.attributes?.phone ||
+            null;
+
+        const phone = normalizePhoneNumber(rawPhone);
+        if (!phone) {
+            console.log(`⚠️ ${device.name} sem telefone.`);
+            return;
+        }
+
+        const [result] = await sock.onWhatsApp(phone);
+
+        if (!result?.exists) {
+            console.log(`❌ Número inválido WhatsApp: ${phone}`);
+            return;
+        }
+
+        const jid = jidNormalizedUser(result.jid);
+
+        const latitude = pos.latitude;
+        const longitude = pos.longitude;
+        const address = pos.address || 'Endereço não disponível';
+        const mapsLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+
+        const ignitionText =
+            newState.ignition === true ? 'Ligada 🔥' :
+            newState.ignition === false ? 'Desligada ❄️' :
+            'N/D';
+
+        const motionText =
+            newState.motion === true ? 'Em movimento 🚗' :
+            newState.motion === false ? 'Parado 🛑' :
+            'N/D';
+
+        const message =
+`🚨 Evento do Dispositivo
+
+📟 ${device.name}
+🌐 Status: ${newState.status}
+🔑 Ignição: ${ignitionText}
+🚘 Movimento: ${motionText}
+🕒 ${new Date().toLocaleString()}
+
+📍 ${latitude}, ${longitude}
+🏠 ${address}
+
+🔗 ${mapsLink}`;
+
+        await sock.sendMessage(jid, { text: message });
+
+        console.log(`✅ Mensagem enviada: ${device.name}`);
+
+    } catch (err) {
+        console.error('Erro envio:', err.message);
+    }
+}
+
+// ================= NORMALIZAÇÃO =================
+function normalizePhoneNumber(phone) {
+    if (!phone) return null;
+
+    phone = phone.replace(/\D/g, '');
+
+    if (phone.startsWith('55')) {
+        const local = phone.slice(2);
+        if (local.length === 11) return phone;
+        if (local.length === 10)
+            return '55' + local[0] + '9' + local.slice(1);
+    }
+
+    if (phone.length === 11)
+        return '55' + phone;
+
+    return phone;
+}
+
+// ================= START =================
 app.listen(PORT, () => {
     console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
 
-// Processa mensagens recebidas no WhatsApp
-client.on('message', async msg => {
-    if (msg.body.startsWith('/gps ')) {
-        const query = msg.body.split('/gps ')[1];
-        await getGPSData(query, msg.from);
-    }
-});
-
-// Função para obter dados GPS do Traccar
-async function getGPSData(query, number) {
-    try {
-        // Obtém a lista de dispositivos
-        const deviceResponse = await axios.get(`${baseUrl}/api/devices`, {
-            headers: { Authorization: authHeader }
-        });
-
-        // Procura o dispositivo pelo uniqueId, id ou name
-        const device = deviceResponse.data.find(d => 
-            d.id == query || d.name.toLowerCase() === query.toLowerCase() || d.uniqueId == query
-        );
-
-        if (!device) {
-            return client.sendMessage(number, '❌ Dispositivo não encontrado.');
-        }
-
-        // Obtém a posição mais recente do dispositivo
-        const positionsResponse = await axios.get(`${baseUrl}/api/positions`, {
-            headers: { Authorization: authHeader }
-        });
-
-        const position = positionsResponse.data.find(p => p.deviceId === device.id);
-
-        if (!position) {
-            return client.sendMessage(number, '⚠️ Não foi possível obter a posição do dispositivo.');
-        }
-
-        // Formata a resposta
-        const googleMapsLink = `https://www.google.com/maps?q=${position.latitude},${position.longitude}`;
-        const message = `🚗 *Informações do Dispositivo:*
-🏷️ *Nome*: ${device.name}
-⚡ *Status*: ${device.status}
-📍 *Localização Atual:*
-🌍 *Latitude*: ${position.latitude}
-🌐 *Longitude*: ${position.longitude}
-🏠 *Endereço*: ${position.address || 'Endereço não disponível'}
-🔗 *Google Maps*: ${googleMapsLink}`;
-
-        return client.sendMessage(number, message);
-    } catch (error) {
-        console.error('Erro ao buscar GPS:', error);
-        return client.sendMessage(number, '⚠️ Ocorreu um erro ao consultar o Traccar.');
-    }
-}
-
-client.initialize();
+startBot();
