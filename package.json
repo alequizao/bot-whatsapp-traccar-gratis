@@ -1,10 +1,12 @@
 {
   "name": "bot-traccar",
   "version": "1.0.0",
-  "description": "Bot para integração do Traccar com o WhatsApp",
+  "description": "Bot de integracao Traccar com WhatsApp usando Baileys",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "check": "node --check index.js && node --check src/config/index.js && node --check src/db/database.js && node --check src/http/app.js && node --check src/logger.js && node --check src/services/backup.js && node --check src/services/eventService.js && node --check src/services/messageQueue.js && node --check src/services/traccar.js && node --check src/services/whatsapp.js && node --check src/utils/hash.js && node --check src/utils/phone.js && node --check src/utils/template.js"
   },
   "author": "@alequizao",
   "license": "ISC",
@@ -14,8 +16,11 @@
     "dotenv": "^17.2.4",
     "express": "^4.22.1",
     "pino": "^10.3.1",
-    "puppeteer": "^19.6.3",
     "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.26.1"
+    "sqlite3": "^6.0.1",
+    "winston": "^3.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
   }
 }

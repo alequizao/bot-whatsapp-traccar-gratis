@@ -1,143 +1,145 @@
-# 🚗 Traccar WhatsApp Event Bot (Baileys 2026)
+# Traccar WhatsApp Bot
 
-Bot para envio automático de eventos do Traccar via WhatsApp.
+Bot Node.js para receber eventos do Traccar e enviar alertas no WhatsApp usando Baileys.
 
-Monitora em tempo real:
+## Recursos
 
-- Status do dispositivo (online / offline / unknown)
-- Ignição (ligada / desligada)
-- Movimento (em movimento / parado)
-- Localização atual
-- Endereço
-- Link Google Maps
+- Webhook Traccar em `POST /webhook/traccar`
+- Monitoramento por polling do Traccar
+- SQLite para eventos, fila e templates
+- Winston logs em `logs/combined.log` e `logs/error.log`
+- Anti-duplicacao de eventos por hash persistente
+- Fila de mensagens com retry e rate limit
+- Reconexao automatica do Baileys
+- Tratamento global de erros
+- Templates configuraveis via API
+- PM2 ready com `ecosystem.config.js`
+- Dockerfile e `docker-compose.yml`
+- Backup automatico da sessao WhatsApp
+- Health check em `GET /health`
+- API REST administrativa em `/api`
 
-Envio automático para o telefone cadastrado no dispositivo.
-
----
-
-## 📦 Requisitos
-
-- Node.js 18+ (recomendado Node 20 LTS)
-- Traccar funcionando
-- Dispositivo com telefone cadastrado
-- WhatsApp válido para envio
-
----
-
-## 📥 Instalação
-
-Clone o repositório:
+## Instalacao local
 
 ```bash
-git clone https://github.com/alequizao/bot-whatsapp-traccar-gratis.git
-cd bot-whatsapp-traccar-gratis
-Instale as dependências:
-
 npm install
-⚙️ Configuração do .env
-Crie um arquivo chamado:
+cp .env.example .env
+npm start
+```
 
-.env
-Baseie-se no arquivo .env.example.
+No primeiro start, escaneie o QR Code exibido no terminal. A sessao fica salva em `auth/`.
 
-📄 Exemplo de .env.example
+## Configuracao
+
+Edite o arquivo `.env`:
+
+```env
 PORT=3000
+ADMIN_TOKEN=troque-este-token
 
 TRACCAR_BASE_URL=http://SEU_SERVIDOR:8082
 TRACCAR_USER=SEU_USUARIO
 TRACCAR_PASS=SUA_SENHA
-🔎 Descrição das variáveis
-Variável	Descrição
-PORT	Porta onde o servidor local irá rodar
-TRACCAR_BASE_URL	URL base do seu servidor Traccar
-TRACCAR_USER	Usuário do Traccar
-TRACCAR_PASS	Senha do Traccar
-⚠️ Nunca suba seu .env para o GitHub.
+TRACCAR_WEBHOOK_TOKEN=troque-token-webhook
+```
 
-Adicione ao .gitignore:
+Se `ADMIN_TOKEN` ficar vazio, a API administrativa fica sem autenticacao. Em producao, mantenha um token forte.
 
-.env
-auth/
-📱 Como conectar o WhatsApp
-Execute:
+## Webhook Traccar
 
-node .
-Será exibido um QR Code no terminal.
+Configure o Traccar para enviar eventos para:
 
-Abra o WhatsApp no celular
+```text
+http://SEU_SERVIDOR:3000/webhook/traccar?token=troque-token-webhook
+```
 
-Vá em Dispositivos conectados
+O bot tambem pode monitorar por polling. Controle isso com:
 
-Escaneie o QR Code
+```env
+TRACCAR_POLL_ENABLED=true
+TRACCAR_POLL_INTERVAL_MS=10000
+```
 
-Após isso, a sessão será salva na pasta:
+## API administrativa
 
-/auth
-Não apague essa pasta se quiser manter a sessão.
+Use o header:
 
-🔄 Como funciona o monitoramento
-O sistema consulta o Traccar a cada 10 segundos
+```text
+Authorization: Bearer SEU_ADMIN_TOKEN
+```
 
-Detecta mudanças de:
+Endpoints:
 
-Status
+- `GET /health`: saude do servico
+- `GET /api/status`: status do WhatsApp, fila e Traccar
+- `GET /api/events?limit=50`: ultimos eventos processados
+- `GET /api/messages?limit=50`: ultimas mensagens da fila
+- `POST /api/messages`: enfileira mensagem manual
+- `GET /api/templates`: consulta template atual
+- `PUT /api/templates`: altera template de evento
+- `POST /api/traccar/poll`: executa uma rodada manual de polling
 
-Ignição
+Exemplo de envio manual:
 
-Movimento
+```bash
+curl -X POST http://localhost:3000/api/messages \
+  -H "Authorization: Bearer SEU_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"phone\":\"5582999999999\",\"message\":\"Teste do bot\"}"
+```
 
-Se houver alteração, envia mensagem automática
+## Templates
 
-📞 Configuração do telefone no Traccar
-O número deve estar cadastrado no dispositivo em:
+Variaveis disponiveis no template:
 
-Campo phone
-ou
+- `{{device.name}}`
+- `{{state.status}}`
+- `{{state.ignitionText}}`
+- `{{state.motionText}}`
+- `{{event.type}}`
+- `{{event.date}}`
+- `{{position.latitude}}`
+- `{{position.longitude}}`
+- `{{position.address}}`
+- `{{position.mapsLink}}`
 
-attributes.phone
+Atualizacao:
 
-Formato recomendado:
+```bash
+curl -X PUT http://localhost:3000/api/templates \
+  -H "Authorization: Bearer SEU_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"eventTemplate\":\"Alerta {{device.name}}\\nStatus: {{state.status}}\\n{{position.mapsLink}}\"}"
+```
 
-5582999999999
-Somente números.
-Sem espaços.
-Sem +.
-Sem traços.
+## PM2
 
-🚀 Executar em Produção
-Recomendado usar:
-
-pm2 start index.js --name traccar-bot
-Para salvar o processo:
-
+```bash
+pm2 start ecosystem.config.js
 pm2 save
-🧠 Estrutura do Projeto
-/auth
-.env
-index.js
-package.json
+```
 
+## Docker
 
+```bash
+cp .env.example .env
+docker compose up -d --build
+docker compose logs -f
+```
 
+Volumes persistidos:
 
+- `./auth`: sessao WhatsApp
+- `./data`: banco SQLite
+- `./logs`: logs Winston
+- `./backups`: backups automaticos da sessao
 
-========================================================
+## Estrutura
 
-Proximas melhorias:
-
-✅ Webhook Traccar
-✅ SQLite
-✅ Winston Logs
-✅ Anti-duplicação de eventos
-✅ Fila de mensagens
-✅ Reconexão automática do Baileys
-✅ Tratamento global de erros
-✅ Rate Limit WhatsApp
-✅ Templates configuráveis
-✅ PM2 Ready
-✅ Dockerfile
-✅ docker-compose.yml
-✅ Backup automático de sessão
-✅ Health Check /health
-✅ API REST administrativa
-✅ Estrutura profissional para produção
+```text
+src/config        configuracao por ambiente
+src/db            SQLite e migrations
+src/http          Express, health, webhook e API
+src/services      WhatsApp, Traccar, fila, eventos e backup
+src/utils         telefone, templates e hash
+```
