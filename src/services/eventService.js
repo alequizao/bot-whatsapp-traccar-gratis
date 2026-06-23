@@ -12,6 +12,7 @@ class EventService {
     this.traccar = traccar;
     this.messageQueue = messageQueue;
     this.deviceCache = new Map();
+    this.lastPositionNotification = new Map();
     this.monitorTimer = null;
   }
 
@@ -37,22 +38,62 @@ class EventService {
       if (!position) continue;
 
       const currentState = this.extractState(device, position);
-      const previousState = this.deviceCache.get(String(device.id));
+      const positionKey = this.extractPositionKey(position);
+      const previousSnapshot = this.deviceCache.get(String(device.id));
+      const previousState = previousSnapshot?.state;
 
-      this.deviceCache.set(String(device.id), currentState);
-      if (!previousState) continue;
-
-      if (!this.hasStateChanged(previousState, currentState)) continue;
-
-      await this.handleEvent({
-        source: 'poll',
-        type: 'state-change',
-        device,
-        position,
-        previousState,
-        currentState,
-        raw: { device, position, previousState, currentState },
+      this.deviceCache.set(String(device.id), {
+        state: currentState,
+        positionKey,
       });
+
+      if (!previousSnapshot) {
+        this.logger.info('Device baseline captured', {
+          deviceId: device.id,
+          deviceName: device.name,
+          notifyOnStartup: this.config.traccar.notifyOnStartup,
+        });
+
+        if (this.config.traccar.notifyOnStartup) {
+          await this.handleEvent({
+            source: 'poll',
+            type: 'startup-state',
+            device,
+            position,
+            previousState: null,
+            currentState,
+            raw: { device, position, currentState },
+          });
+        }
+
+        continue;
+      }
+
+      if (this.hasStateChanged(previousState, currentState)) {
+        await this.handleEvent({
+          source: 'poll',
+          type: 'state-change',
+          device,
+          position,
+          previousState,
+          currentState,
+          raw: { device, position, previousState, currentState },
+        });
+
+        continue;
+      }
+
+      if (this.shouldNotifyPositionChange(device.id, previousSnapshot.positionKey, positionKey)) {
+        await this.handleEvent({
+          source: 'poll',
+          type: 'position-change',
+          device,
+          position,
+          previousState,
+          currentState,
+          raw: { device, position, previousState, currentState },
+        });
+      }
     }
   }
 
@@ -149,6 +190,23 @@ class EventService {
       previousState.ignition !== currentState.ignition ||
       previousState.motion !== currentState.motion
     );
+  }
+
+  extractPositionKey(position) {
+    return String(position.id || position.fixTime || position.deviceTime || position.serverTime || '');
+  }
+
+  shouldNotifyPositionChange(deviceId, previousPositionKey, currentPositionKey) {
+    if (!this.config.traccar.notifyPositionChanges) return false;
+    if (!currentPositionKey || previousPositionKey === currentPositionKey) return false;
+
+    const key = String(deviceId);
+    const lastSentAt = this.lastPositionNotification.get(key) || 0;
+    const elapsed = Date.now() - lastSentAt;
+    if (elapsed < this.config.traccar.positionMinIntervalMs) return false;
+
+    this.lastPositionNotification.set(key, Date.now());
+    return true;
   }
 
   buildEventHash(event) {

@@ -58,7 +58,12 @@ O bot tambem pode monitorar por polling. Controle isso com:
 ```env
 TRACCAR_POLL_ENABLED=true
 TRACCAR_POLL_INTERVAL_MS=10000
+TRACCAR_NOTIFY_ON_STARTUP=true
+TRACCAR_NOTIFY_POSITION_CHANGES=false
+TRACCAR_POSITION_MIN_INTERVAL_MS=300000
 ```
+
+Por padrao, o bot envia um alerta inicial quando captura o estado atual de cada dispositivo pela primeira vez apos iniciar. Mudancas de localizacao podem ser ativadas com `TRACCAR_NOTIFY_POSITION_CHANGES=true`; use `TRACCAR_POSITION_MIN_INTERVAL_MS` para evitar excesso de mensagens.
 
 ## API administrativa
 

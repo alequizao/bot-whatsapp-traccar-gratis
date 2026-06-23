@@ -32,6 +32,9 @@ const config = {
     pass: process.env.TRACCAR_PASS || '',
     pollEnabled: asBoolean(process.env.TRACCAR_POLL_ENABLED, true),
     pollIntervalMs: asNumber(process.env.TRACCAR_POLL_INTERVAL_MS, 10000),
+    notifyOnStartup: asBoolean(process.env.TRACCAR_NOTIFY_ON_STARTUP, true),
+    notifyPositionChanges: asBoolean(process.env.TRACCAR_NOTIFY_POSITION_CHANGES, false),
+    positionMinIntervalMs: asNumber(process.env.TRACCAR_POSITION_MIN_INTERVAL_MS, 5 * 60 * 1000),
     webhookToken: process.env.TRACCAR_WEBHOOK_TOKEN || '',
   },
   whatsapp: {

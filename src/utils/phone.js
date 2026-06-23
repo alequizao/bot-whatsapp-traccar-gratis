@@ -19,4 +19,13 @@ function normalizePhoneNumber(value) {
   return digits;
 }
 
-module.exports = { normalizePhoneNumber };
+function maskPhoneNumber(value) {
+  if (!value) return null;
+
+  const digits = String(value).replace(/\D/g, '');
+  if (digits.length <= 4) return '****';
+
+  return `${digits.slice(0, 4)}****${digits.slice(-2)}`;
+}
+
+module.exports = { normalizePhoneNumber, maskPhoneNumber };

@@ -1,5 +1,7 @@
 'use strict';
 
+const { maskPhoneNumber } = require('../utils/phone');
+
 class MessageQueue {
   constructor({ config, logger, database, whatsapp }) {
     this.config = config;
@@ -29,7 +31,11 @@ class MessageQueue {
 
   async enqueue(message) {
     const id = await this.database.enqueueMessage(message);
-    this.logger.info('Message queued', { id, phone: message.phone, jid: message.jid });
+    this.logger.info('Message queued', {
+      id,
+      phone: maskPhoneNumber(message.phone),
+      jid: maskPhoneNumber(message.jid),
+    });
     return id;
   }
 
@@ -65,7 +71,7 @@ class MessageQueue {
 
       this.lastSentAt = Date.now();
       await this.database.markMessageSent(message.id, jid);
-      this.logger.info('Message sent', { id: message.id, jid });
+      this.logger.info('Message sent', { id: message.id, jid: maskPhoneNumber(jid) });
     } catch (error) {
       const delaySeconds = Math.min(300, 2 ** (message.attempts + 1) * 10);
       await this.database.markMessageFailed(message.id, error.message, delaySeconds);
