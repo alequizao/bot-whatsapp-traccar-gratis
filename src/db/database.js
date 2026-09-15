@@ -1,5 +1,9 @@
 'use strict';
 
+/*
+ * Bot WhatsApp Traccar · Desenvolvido por Alequizao <alequizao.dev@gmail.com>
+ * https://github.com/alequizao · © 2026 Alequizao. Todos os direitos reservados.
+ */
 const fs = require('fs');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
